@@ -4,10 +4,11 @@ librosa
 numpy
 regex
 google-generativeai
-
-flaskcors
 opencv-python-headless
 pymongo
 gridfs
 ffmpeg-python
+flask-cors
+opencv-python
+werkzeug
 bson
