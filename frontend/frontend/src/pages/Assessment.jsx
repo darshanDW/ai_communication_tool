@@ -1,9 +1,85 @@
 // Required packages: react, tailwindcss, react-speech-recognition, media-recorder
 import React, { useState, useEffect, useRef } from 'react';
-
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
+import { Page, Text, View, Document, PDFDownloadLink, StyleSheet } from '@react-pdf/renderer';
+import { jwtDecode } from "jwt-decode";
+import { use } from 'react';
+const styles = StyleSheet.create({
+    page: {
+        padding: 20,
+        backgroundColor: '#f0f4f8', // Light background color
+    },
+    header: {
+        fontSize: 20,
+        marginBottom: 10,
+        textAlign: 'center',
+        color: '#0f4c81', // Dark blue color
+        fontWeight: 'bold',
+        borderBottomWidth: 2,
+        borderBottomColor: '#0f4c81',
+        borderBottomStyle: 'solid',
+        paddingBottom: 5,
+    },
+    section: {
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: '#ccc',
+        borderRadius: 5,
+        padding: 10,
+        backgroundColor: '#fff',
+    },
+    keyText: {
+        fontSize: 14,
+        color: '#333',
+        fontWeight: 'bold',
+    },
+    valueText: {
+        fontSize: 14,
+        color: '#555',
+    },
+    horizontalLine: {
+        height: 1,
+        backgroundColor: '#e0e0e0',
+        marginVertical: 5,
+    },
+    footer: {
+        fontSize: 12,
+        marginTop: 20,
+        textAlign: 'center',
+        color: '#0f4c81',
+    },
+});
+
+
+export const FeedbackPDF = ({ scores }) => (
+    <Document>
+        <Page size="A4" style={styles.page}>
+            {/* Header Section */}
+            <Text style={styles.header}>Assessment Feedback</Text>
+
+            {/* Scores Section */}
+            {Object.entries(scores).map(([key, value], index) => (
+                <View key={key} style={styles.section}>
+                    <Text style={styles.keyText}>{key}:</Text>
+                    <Text style={styles.valueText}>{value}</Text>
+                    {index < Object.entries(scores).length - 1 && (
+                        <View style={styles.horizontalLine} />
+                    )}
+                </View>
+
+
+
+            ))}
+
+            {/* Footer Section */}
+            <Text style={styles.footer}>Thank you for completing the assessment!</Text>
+        </Page>
+    </Document>
+);
+
 
 export const Assessment = () => {
+    const [user, setuser] = useState(null)
     const [selectedQuestions, setSelectedQuestions] = useState([]); // To store selected questions and their order
     const [isRecording, setIsRecording] = useState(false); // To manage recording state
     const [audioBlob, setAudioBlob] = useState(null); // To store recorded audio blob
@@ -12,7 +88,10 @@ export const Assessment = () => {
     const [speechrate, setSpeechrate] = useState(0)
     const myRef = useRef(null)
     const [count, setCount] = useState(0);
-
+    const [isTimerRed, setIsTimerRed] = useState(false); // Flag to change timer text color
+    const [showFace, setShowFace] = useState(false); // Show video feed
+    const [loading, setLoading] = useState(false); // Loading indicator for video feed
+    const [scores, setscores] = useState({})
     // List of predefined questions
     const questions = [
         "Tell us about yourself?",
@@ -27,15 +106,18 @@ export const Assessment = () => {
             alert("Browser does not support speech recognition.");
         }
     }, []);
+    // Implementing the setInterval method for the timer
     useEffect(() => {
-        //Implementing the setInterval method
-        const interval = setInterval(() => {
-            setCount(count + 1);
-        }, 1000);
+        let interval;
+        if (isRecording) {
+            interval = setInterval(() => {
+                setCount((prevCount) => prevCount + 1);
+            }, 1000);
+        }
 
-        //Clearing the interval
+        // Clear the interval when recording stops or component is unmounted
         return () => clearInterval(interval);
-    }, [count]);
+    }, [isRecording]);
     // Handle checkbox selection and ordering
     const handleQuestionSelection = (question) => {
         setSelectedQuestions((prev) => {
@@ -47,8 +129,15 @@ export const Assessment = () => {
         });
     };
 
+    const token = localStorage.getItem("token"); // Replace 'authToken' with the key used in your app
+    const decodedToken = jwtDecode(token); // Decode the token
+    const userid = decodedToken.userid;
+    console.log(userid)
+
+
     // Start recording: Initialize speech recognition and audio recorder
     const startAssessment = async () => {
+
         setIsRecording(true);
         resetTranscript();
         setCount(0)
@@ -62,6 +151,7 @@ export const Assessment = () => {
             utterance.rate = 1; // Adjust the speaking rate (default is 1)
             speechSynthesis.speak(utterance);
         };
+        setShowFace(true);
 
         // Call the function
         playStartSound();
@@ -76,7 +166,7 @@ export const Assessment = () => {
             recorder.ondataavailable = (e) => chunks.push(e.data);
 
             recorder.onstop = () => {
-                const audioFile = new Blob(chunks, { type: "audio/wav" });
+                const audioFile = new Blob(chunks, { type: "audio/webm" });
                 console.log("Audio file created");
                 resolve(audioFile); // Resolve with the audio file once it's created
             };
@@ -94,29 +184,68 @@ export const Assessment = () => {
             console.log("No audio blob created.");
         }
     };
-
+    // Extract user_id (adjust based on your token structure)
     // Stop recording: Stop speech recognition and audio recorder
     const stopAssessment = async () => {
-        setIsRecording(false);
+
+
+        var dat = {}
+
+        setIsRecording(false); // Stop recording
         SpeechRecognition.stopListening();
         if (audioRecorder) audioRecorder.stop();
+        // Stop camera
         try {
+            console.log("Transcript being sent:", transcript);
             const response = await fetch('http://127.0.0.1:5000/grammer/check', {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json", // Specify JSON content type
-                },
-                body: JSON.stringify({ // Convert JavaScript object to JSON string
-                    transcript: transcript
-                }),
-            });
-            const resp = await response.json();
-            console.log(resp)
-        } catch (err) { console.log(err) }
+                    "Content-Type": "application/json",
 
+                },
+                body: JSON.stringify({ transcript }),
+            });
+
+            dat = await response.json();
+            console.log("API Response:", dat);
+            setscores(dat); // Update the state
+            console.log(dat)
+        } catch (err) {
+            console.error("Error in grammar check:", err);
+        }
+
+
+        if (dat) {
+            try {
+                
+                const response = await fetch("http://127.0.0.1:5000/face/stop_camera", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json", // Inform the server of JSON payload
+                    },
+                    body: JSON.stringify({ userid, dat }) // Correctly stringify the JSON object
+                });
+                console.log(response)
+                if (response.ok) {
+                    console.log("Camera stopped successfully.");
+                } else {
+                    console.log(response)
+                    console.error("Failed to stop the camera.");
+                }
+            } catch (error) {
+                console.error("Error in stopping the camera:", error);
+            }
+        }
+
+        // Stop assessment and check grammar
+        setShowFace(false);
+
+
+        console.log("Stopping assessment...");
 
 
     };
+
 
     // Save the audio file (connect with backend for actual upload)
     const saveAudio = async () => {
@@ -132,7 +261,7 @@ export const Assessment = () => {
             // Implement backend upload logic here
             try {
                 const formData = new FormData();
-                formData.append('audio_data', audioBlob, 'recorded_audio.wav');
+                formData.append('audio_data', audioBlob, 'recorded_audio.webm');
                 formData.append('type', 'wav');
 
                 const response = await fetch('http://127.0.0.1:5000/grammer/check_pauses', {
@@ -141,7 +270,7 @@ export const Assessment = () => {
                     body: formData,
 
                 });
-                console.log(response.status)
+                console.log(await response.json())
 
             } catch (err) { console.log(err) }
             URL.revokeObjectURL(audioURL);
@@ -157,14 +286,12 @@ export const Assessment = () => {
 
 
     };
-
-
     async function countSpeechRate() {
         try {
-            const duration = count
+            const duration = count;
             const wordCount = transcript.trim().split(/\s+/).length;
             const rate = wordCount / count;
-            console.log(duration)
+            console.log(duration);
 
             setSpeechrate(rate);
             setCount(0);
@@ -178,7 +305,7 @@ export const Assessment = () => {
             const audioURL = URL.createObjectURL(audioBlob);
             const link = document.createElement("a");
             link.href = audioURL;
-            link.download = "recorded_audio.wav"; // Specify the filename
+            link.download = "recorded_audio.webm"; // Specify the filename
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -189,15 +316,16 @@ export const Assessment = () => {
         }
     };
     return (
-        <div className='flex'>
-
-            <div className="p-6 bg-gray-100 min-h-screen">
-                <h1 className="text-2xl font-bold mb-4">Assessment Page</h1>
+        <div className='flex flex-col p-2 bg-gray-100 min-h-screen'>
+            {/* Section 1: Question List and Controls */}
+            <div className="flex flex-col mb-6">
+                {/* Center the Assessment Page Title */}
+                <h1 className="text-2xl font-bold mb-4 text-center">Assessment Page</h1>
 
                 {/* Question List */}
-                <div className="mb-6">
+                <div className="mb-4">
                     {questions.map((question, index) => (
-                        <div key={index} className="flex items-center mb-2">
+                        <div key={index} className="flex items-center mb-1">
                             <input
                                 type="checkbox"
                                 id={`question-${index}`}
@@ -214,42 +342,65 @@ export const Assessment = () => {
                 </div>
 
                 {/* Start and Stop Buttons */}
-                <div className="flex gap-4 mb-6">
-
-                    <button className="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600"
-                        onClick={startAssessment} disabled={isRecording} >
+                <div className="flex gap-4">
+                    <button className="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600" onClick={startAssessment} disabled={isRecording}>
                         Start
                     </button>
-
-                    <button className="bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600"
-                        onClick={() => { stopAssessment(); saveAudio(); }} disabled={!isRecording} >
+                    <button className="bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600" onClick={() => { stopAssessment(); saveAudio(); }} disabled={!isRecording}>
                         Stop
                     </button>
+                    {/* Feedback Button */}
+                    {Object.keys(scores).length > 0 && (
+                        <PDFDownloadLink
+                            document={<FeedbackPDF scores={scores} />}
+                            fileName="feedback.pdf"
+                            key={JSON.stringify(scores)} // Ensure PDFDownloadLink updates when scores change
+                        >
+                            {({ loading }) => (
+                                <button
+                                    className="bg-green-500 text-white py-2 px-4 rounded hover:bg-green-600"
+                                    disabled={loading}
+                                >
+                                    {loading ? 'Generating PDF...' : 'Download Feedback'}
+                                </button>
+                            )}
+                        </PDFDownloadLink>
+                    )}
+
+
+
+                </div>
+
+            </div>
+
+            {/* Section 2: Transcription */}
+            <div className="flex mb-6">
+                <div className="bg-slate-800 p-4 rounded flex-1 shadow-md mr-6">
+                    <h2 className="text-lg font-bold mb-2 text-white">Live Transcription:</h2>
+                    <p className="text-white whitespace-pre-wrap">{transcript}</p>
+                </div>
+
+                {/* Section 3: Video */}
+                <div className="flex-1 bg-gray-300 p-4 rounded shadow-md">
+                    <h2 className="text-lg font-bold mb-2">Video Recording:</h2>
+                    {showFace && (
+                        <div className='video-container'>
+                            <img id="video" src="http://127.0.0.1:5000/face/video_feed" alt='Video Stream' />
+                        </div>
+                    )}
                 </div>
             </div>
 
-            {/* Transcription Output */}
-            <div className=' flex'>
-
-                <div className="bg-slate-800 p-4 rounded h-1/4  shadow-md">
-                    <h2 className="text-lg font-bold mb-2">Live Transcription:</h2>
-                    <p className="text-gray-700 whitespace-pre-wrap">{transcript}</p>
+            {/* Section 4: Timer and Speech Rate (Positioned Top Right) */}
+            <div className="absolute top-0 right-0 p-4 text-lg">
+                <div className="font-semibold">
+                    <h2 className={`font-semibold ${isTimerRed ? 'text-red-500' : ''}`}>Timer: {count} seconds</h2>
+                    <h3 className="font-semibold">Speech Rate: {speechrate.toFixed(2)} words/second</h3>
                 </div>
-
-                <div>
-                    <video className='p-6 bg-gray-300 h-1/4 min-h-screen' src="" alt="" />
-                </div>
-            </div>
-            <div>
-                <button onClick={playAudio}>
-                    <span>Play Audio</span>
+                <button className="bg-green-500 text-white py-2 px-4 rounded hover:bg-green-600" onClick={playAudio}>
+                    Play Audio
                 </button>
-                <audio ref={myRef} id="audio-element" src="" type="audio/wav" />
-                <h1>Timer :{count}</h1>
-                <h2>Speech rate: {speechrate.toFixed(2)}</h2>
             </div>
-
         </div>
     );
 };
-

@@ -5,7 +5,7 @@ import {Signup} from './pages/Signup'
 import {Signin} from './pages/Signin'
 import { Assessment } from './pages/Assessment'
  import { Landing } from './pages/Landing'
-
+import VideosPage from './pages/VideosPage';
 function App() {
   return (
    <div>
@@ -14,7 +14,9 @@ function App() {
          <Route path='/' element={<Landing/>} />
          <Route path="/signup" element={<Signup/>} />
          <Route path="/signin" element={<Signin />} />
-         <Route path="/assessment" element={<Assessment/>}></Route>
+         <Route path="/assessment" element={<Assessment/>}/>
+         <Route path='/videos' element={<VideosPage />} />
+        
        </Routes>
      </BrowserRouter>
 

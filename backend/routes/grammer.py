@@ -5,11 +5,16 @@ import os
 import librosa
 import numpy as np
 from dotenv import load_dotenv
+import subprocess
+from io import BytesIO
+import wave
+import numpy as np
 import google.generativeai as genai
-
+import regex as re
+import ffmpeg
+import mimetypes
 from collections import Counter
 bp = Blueprint('grammer', __name__)
-import regex as re
 
 
 load_dotenv()
@@ -238,29 +243,58 @@ else:
 """
 
 
+def convert_webm_to_wav(webm_data):
+    """
+    Converts a webm audio file to wav format using FFmpeg.
 
+    Parameters:
+    - webm_data: Binary data of the webm file.
 
+    Returns:
+    - wav_data: Binary data of the converted wav file.
+    """
+    with open("temp_input.webm", "wb") as temp_webm:
+        temp_webm.write(webm_data)
 
+    try:
+        # Use FFmpeg to convert WebM to WAV
+        output_wav_path = "temp_output.wav"
+        subprocess.run(
+            ["C:/ffmpeg/ffmpeg.exe", "-i", "temp_input.webm", "-ar", "16000", "-ac", "1", output_wav_path],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        with open(output_wav_path, "rb") as wav_file:
+            wav_data = wav_file.read()
+    finally:
+        # Clean up temporary files
+        os.remove("temp_input.webm")
+        if os.path.exists(output_wav_path):
+            os.remove(output_wav_path)
 
+    return wav_data
 
-
-
-
-def detect_pauses(audio_file_path ):
+def detect_pauses(audio_file):
     """
     Detects pauses (silences) in the given audio file and returns their start times and durations.
 
     Parameters:
-    - audio_file_path (str): Path to the audio file (.wav).
-    - threshold (float): Energy threshold for silence detection. Lower values will detect softer silences.
+    - audio_file: Audio file object (binary format).
 
     Returns:
     - pause_start_times (list): List of start times of pauses in seconds.
     - pause_durations (list): List of durations of pauses in seconds.
+    - pause_ends (list): List of end times of pauses in seconds.
     """
-    threshold=0.007
-    # Load the audio file
-    y, sr = librosa.load(audio_file_path, sr=None)
+    threshold = 0.0085
+
+    # Read the audio file using the wave module
+    with wave.open(BytesIO(audio_file), 'rb') as wav_file:
+        sample_rate = wav_file.getframerate()
+        n_frames = wav_file.getnframes()
+        audio_data = wav_file.readframes(n_frames)
+        y = librosa.util.buf_to_float(audio_data, dtype='float32')
 
     # Calculate short-time energy (for detecting silences)
     energy = librosa.feature.rms(y=y)
@@ -271,24 +305,26 @@ def detect_pauses(audio_file_path ):
     # Initialize variables for detecting pauses
     pause_durations = []
     pause_start_times = []
-    pause_ends=[]
+    pause_ends = []
     current_pause_start = None
 
     # Iterate over the silent frames to detect pause starts and durations
     for idx, frame in enumerate(silent_frames):
-        # If it's the first frame of the pause or a continuation of a pause
         if current_pause_start is None:
-            current_pause_start = librosa.frames_to_time(frame, sr=sr)
-        # If it's the end of the pause
+            current_pause_start = librosa.frames_to_time(frame, sr=sample_rate)
         if idx == len(silent_frames) - 1 or silent_frames[idx + 1] != frame + 1:
-            pause_end = librosa.frames_to_time(frame + 1, sr=sr)  # End of the pause
-            pause_ends.append(pause_end)
+            pause_end = librosa.frames_to_time(frame + 1, sr=sample_rate)
             pause_duration = pause_end - current_pause_start
-            pause_durations.append(pause_duration)
-            pause_start_times.append(current_pause_start)
-            current_pause_start = None  # Reset for the next pause
+            if(pause_duration>1.5):
+                pause_ends.append(pause_end)
 
-    return pause_start_times, pause_durations,pause_ends
+                pause_durations.append(pause_duration)
+                pause_start_times.append(current_pause_start)
+            current_pause_start = None
+    clarity_score = get_word_clarity(y, sample_rate)
+
+
+    return pause_start_times, pause_durations, pause_ends,clarity_score
 
 
 # Example usage
@@ -309,6 +345,34 @@ for idx, (start, duration,end) in enumerate(zip(start_times, durations,pause_end
 
 
 
+def get_word_clarity(y, sr):
+    """
+    Calculates clarity score, pitch, snr, and average energy from the audio.
+    
+    Parameters:
+    - y: Audio time series data.
+    - sr: Sample rate of the audio file.
+    
+    Returns:
+    - clarity_score (float): Clarity score based on energy, pitch, and SNR.
+    - pitch (float): Average pitch of the audio.
+    - snr (float): Signal-to-noise ratio.
+    - avg_energy (float): Average energy.
+    """
+    # Extract features such as pitch, energy, and formant frequencies
+    energy = librosa.feature.rms(y=y)
+    
+    # Pitch (fundamental frequency)
+    pitches, magnitudes = librosa.core.piptrack(y=y, sr=sr)
+    pitch = np.mean(pitches)
+
+    # Calculate signal-to-noise ratio (SNR)
+    snr = np.mean(y) / np.std(y)
+
+    # A simplistic approach: High SNR, pitch, and energy might correlate with better clarity
+    clarity_score = (snr + pitch + np.mean(energy)) / 3
+    
+    return clarity_score
 
 
 
@@ -351,14 +415,20 @@ def audio_analysis():
     try:
       if request.method == 'POST':
         # Check if 'audio_data' exists in the request
+         print("request:",request)
          if 'audio_data' not in request.files:
             return jsonify({"error": "No audio_data key in request"}), 400
-        
+         print(1)
          audio_file = request.files['audio_data']
-
+         mime_type = audio_file.content_type
+         print(mime_type)
         # Save the file to the specified path
-         file_path = os.path.join(UPLOAD_FOLDER, "recorded_audio.wav")
-         audio_file.save(file_path)
+         wav_data = convert_webm_to_wav(audio_file.read())
+
+        # Process the WAV data for pauses
+         pause_start_times, pause_durations, pause_ends,clarity_score = detect_pauses(wav_data)         
+         print("Pause Durations:", pause_durations)
+         return jsonify({"message": "Success", "pause_durations": pause_durations,"pause_starts":pause_start_times,"pause_ends":pause_ends,"clarity_score":clarity_score}),200
         
 
             # Process the audio file (e.g., detect pauses)
@@ -366,9 +436,7 @@ def audio_analysis():
             # Add your processing logic here
 
             # Further processing like pause detection
-         pause_start_times, pause_durations, pause_ends = detect_pauses(file_path)
-         print("Pause Durations:", pause_durations)
-         return jsonify({"message": "Success", "pause_durations": pause_durations}),200
+       
 
     except Exception as e:
             print(f"Error: {e}")

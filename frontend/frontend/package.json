@@ -11,12 +11,17 @@
   },
   "dependencies": {
     "@jridgewell/gen-mapping": "^0.3.5",
+    "@react-pdf/renderer": "^4.1.5",
     "autoprefixer": "^10.4.20",
     "axios": "^1.7.9",
+    "jsonwebtoken": "^9.0.2",
+    "jwt-decode": "^4.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-player": "^2.16.0",
     "react-router-dom": "^7.0.2",
-    "react-speech-recognition": "^3.10.0"
+    "react-speech-recognition": "^3.10.0",
+    "video-react": "^0.16.0"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",

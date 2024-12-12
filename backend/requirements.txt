@@ -1,3 +1,13 @@
-Flask==3.1.0
-Flask_Cors==5.0.0
-happytransformer==3.0.0
+Flask
+python-dotenv
+librosa
+numpy
+regex
+google-generativeai
+
+flaskcors
+opencv-python-headless
+pymongo
+gridfs
+ffmpeg-python
+bson
