@@ -19,7 +19,7 @@ app.register_blueprint(face.bp, url_prefix='/face')
 app.config['UPLOAD_FOLDER'] = 'C:/Users/asus/OneDrive/Documents/Communication-Assessment-Tool[1]/Communication-Assessment-Tool/backend'
 
 # Get port from environment variables, default to 5000 if not set
-port = os.getenv('PORT', 5000)
+port = os.getenv('PORT', 10000)
 
 if __name__ == '__main__':
     # Run the app on the specified port
