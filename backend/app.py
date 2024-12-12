@@ -23,4 +23,4 @@ port = os.getenv('PORT', 10000)
 
 if __name__ == '__main__':
     # Run the app on the specified port
-    app.run(debug=True, port=port)
+    app.run(host='0.0.0.0', port=port)  # Use 0.0.0.0 to bind to all network interfaces
