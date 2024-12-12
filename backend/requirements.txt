@@ -6,9 +6,8 @@ regex
 google-generativeai
 opencv-python-headless
 pymongo
-gridfs
 ffmpeg-python
 flask-cors
 opencv-python
 werkzeug
-bson
+
