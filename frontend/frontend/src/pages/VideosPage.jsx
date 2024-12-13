@@ -38,7 +38,7 @@ const VideosPage = () => {
     }, []);
 
     const handleVideoClick = (fileId) => {
-        const videoUrl = `http://127.0.0.1:5000/face/video/${fileId}`;
+        const videoUrl = `https://ai-communication-tool.onrender.com/${fileId}`;
         console.log(videoUrl);
         const anchor = document.createElement('a');
         anchor.href = videoUrl;

@@ -33,6 +33,9 @@ total_time = 0
 eye_contact_time = 0
 tracking_started = False  # Flag to track when to start counting
 start_time = None         # Start time for the session
+
+
+
 def process_frame(frame):
     global total_time, eye_contact_time, tracking_started, start_time
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -73,6 +76,7 @@ def generate_frames():
     global camera, file_id
     if not camera:
         camera = cv2.VideoCapture (0)
+        print(camera)
 
     
     try:
@@ -82,7 +86,8 @@ def generate_frames():
             contentType="video/mp4"
         ) as video_stream:
             file_id = video_stream._id
-            print(f"Started video stream with ObjectId: {file_id}")
+            
+            print(f"Started video stream with ObjectId: {file_id,video_stream._id}")
 
             while camera_active:  # Keep running while camera is active
                 if not camera or not camera.isOpened():
@@ -149,6 +154,7 @@ def stop_camera():
         # Release the camera resource
         if camera and camera.isOpened():
             camera.release()
+            print("FFFF")
             camera = None
 
         # Reset engagement tracking variables
@@ -160,7 +166,7 @@ def stop_camera():
        
 
         response_file_id = file_id
-        camera=None
+        file_id=None
         return jsonify({
             "success": True,
             "message": "Camera stopped and video uploaded",
