@@ -72,7 +72,7 @@ def process_frame(frame):
 def generate_frames():
     global camera, file_id
     if not camera:
-        camera = cv2.VideoCapture(0)
+        camera = cv2.VideoCapture (0)
 
     
     try:
