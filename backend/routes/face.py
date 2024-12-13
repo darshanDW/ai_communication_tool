@@ -10,9 +10,10 @@ from flask_cors import CORS
 import ffmpeg
 from bson import ObjectId
 
-import threading
+
 bp = Blueprint('face', __name__)
 
+camera = None
 CORS(bp)
 # MongoDB setup
 client = MongoClient("mongodb+srv://pranavhore1455:Pranav%402003@cluster0.8ucsl.mongodb.net/")  # Update this with your MongoDB URI
@@ -22,7 +23,6 @@ fs = gridfs.GridFS(db)
 
 camera_active = True  # Global flag
 
-camera = None
 
 file_id = None  # Global variable to store the file_id
 # Load pre-trained Haar cascades for face and eye detection
@@ -32,11 +32,7 @@ eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml
 total_time = 0
 eye_contact_time = 0
 tracking_started = False  # Flag to track when to start counting
-start_time = None    
-
-
-
-     # Start time for the session
+start_time = None         # Start time for the session
 def process_frame(frame):
     global total_time, eye_contact_time, tracking_started, start_time
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -57,7 +53,7 @@ def process_frame(frame):
     if tracking_started:
         current_time = time.time()
         frame_time = current_time - start_time  # Time elapsed since start
-        start_time = current_time  # Reset camera for next frame
+        start_time = current_time  # Reset start_time for next frame
         total_time += frame_time  # Add to total session time
         if eye_contact:
             eye_contact_time += frame_time  # Add to engagement time
@@ -75,17 +71,15 @@ def process_frame(frame):
 
 def generate_frames():
     global camera, file_id
+    if not camera:
+        camera = cv2.VideoCapture(0)
 
-    camera = cv2.VideoCapture(0)
-
+    
     try:
         with fs.new_file(
-            filename="temp.mp4",
+            filename="temp_video.mp4",
             upload_date=datetime.utcnow(),
-            contentType="video/mp4",
-            chunk_size=3 * 1024 * 1024  # 4MB chunks
-
-            
+            contentType="video/mp4"
         ) as video_stream:
             file_id = video_stream._id
             print(f"Started video stream with ObjectId: {file_id}")
@@ -104,7 +98,7 @@ def generate_frames():
                 _, buffer = cv2.imencode('.jpg', processed_frame)
                 frame_data = buffer.tobytes()
 
-                video_stream.write(frame_data)  # Write frames to GridFS
+                video_stream.write(frame_data)
 
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
@@ -115,6 +109,7 @@ def generate_frames():
         print(f"Error during frame generation: {e}")
     finally:
         print(f"Stream complete. Video saved with ObjectId: {file_id}")
+
 
 @bp.route('/video_feed')
 def video_feed():
@@ -143,6 +138,7 @@ def video_feed():
 #     return jsonify({"success": True, "message": "Camera stopped and video uploaded", "file_id": str(file_id)}), 200
 
 @bp.route('/stop_camera', methods=['POST'])
+
 def stop_camera():
     global camera, camera_active, file_id, total_time, eye_contact_time, tracking_started, start_time
 
@@ -152,23 +148,27 @@ def stop_camera():
 
         # Release the camera resource
         if camera and camera.isOpened():
-            print("SDAD")
             camera.release()
             camera = None
 
-        # Wait for the file to be finalized in GridFS
+        # Reset engagement tracking variables
         total_time = 0
         eye_contact_time = 0
         tracking_started = False
-
         start_time = None
-        response_file_id = file_id
 
+       
+
+        response_file_id = file_id
+        camera=None
         return jsonify({
             "success": True,
             "message": "Camera stopped and video uploaded",
             "file_id": str(response_file_id)
         }), 200
+
+        
+           
 
     except Exception as e:
         print(f"Error occurred: {e}")
@@ -177,6 +177,8 @@ def stop_camera():
             "message": "An error occurred",
             "error": str(e)
         }), 500
+    
+
 
 @bp.route('/get_user_videos', methods=['POST'])
 def get_user_videos():
