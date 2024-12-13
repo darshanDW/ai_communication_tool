@@ -260,7 +260,7 @@ def convert_webm_to_wav(webm_data):
         # Use FFmpeg to convert WebM to WAV
         output_wav_path = "temp_output.wav"
         subprocess.run(
-            ["C:/ffmpeg/ffmpeg.exe", "-i", "temp_input.webm", "-ar", "16000", "-ac", "1", output_wav_path],
+            ["ffmpeg", "-i", "temp_input.webm", "-ar", "16000", "-ac", "1", output_wav_path],
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL

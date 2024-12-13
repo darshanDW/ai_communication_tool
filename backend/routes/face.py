@@ -10,7 +10,7 @@ from flask_cors import CORS
 import ffmpeg
 from bson import ObjectId
 
-
+import threading
 bp = Blueprint('face', __name__)
 
 camera = None
@@ -20,7 +20,11 @@ client = MongoClient("mongodb+srv://pranavhore1455:Pranav%402003@cluster0.8ucsl.
 db = client["video_storage"]
 fs = gridfs.GridFS(db)
 # Path to temporarily store the recorded video before uploading
-TEMP_VIDEO_PATH = "recorded_video.avi"
+
+camera_active = True  # Global flag
+
+
+file_id = None  # Global variable to store the file_id
 # Load pre-trained Haar cascades for face and eye detection
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
@@ -28,7 +32,11 @@ eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml
 total_time = 0
 eye_contact_time = 0
 tracking_started = False  # Flag to track when to start counting
-start_time = None         # Start time for the session
+start_time = None    
+
+
+
+     # Start time for the session
 def process_frame(frame):
     global total_time, eye_contact_time, tracking_started, start_time
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -44,12 +52,12 @@ def process_frame(frame):
             cv2.rectangle(roi_color, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 2)
     # Start tracking when eye contact is first detected
     if not tracking_started and eye_contact:
-        tracking_started = True
+        tracking_started = True   
         start_time = time.time()  # Start the timer
     if tracking_started:
         current_time = time.time()
         frame_time = current_time - start_time  # Time elapsed since start
-        start_time = current_time  # Reset start_time for next frame
+        start_time = current_time  # Reset camera for next frame
         total_time += frame_time  # Add to total session time
         if eye_contact:
             eye_contact_time += frame_time  # Add to engagement time
@@ -66,28 +74,47 @@ def process_frame(frame):
     return frame
 
 def generate_frames():
-    global camera
-    camera = cv2.VideoCapture(0)
-    # Setup video writer to save video locally
-    fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    out = cv2.VideoWriter(TEMP_VIDEO_PATH, fourcc, 20.0, (640, 480))
+    global camera, file_id
+    if not camera:
+        camera = cv2.VideoCapture(0)
+
     try:
-        while True:
-            success, frame = camera.read()
-            if not success:
-                break
-            else:
+        with fs.new_file(
+            filename="temp.mp4",
+            upload_date=datetime.utcnow(),
+            contentType="video/mp4",
+            chunk_size=3 * 1024 * 1024  # 4MB chunks
+
+            
+        ) as video_stream:
+            file_id = video_stream._id
+            print(f"Started video stream with ObjectId: {file_id}")
+
+            while camera_active:  # Keep running while camera is active
+                if not camera or not camera.isOpened():
+                    print("Camera is unavailable or has been released.")
+                    break
+
+                success, frame = camera.read()
+                if not success:
+                    print("Failed to read frame.")
+                    break
+
                 processed_frame = process_frame(frame)
-                out.write(frame)  # Save each frame to the video file
                 _, buffer = cv2.imencode('.jpg', processed_frame)
-                frame = buffer.tobytes()
+                frame_data = buffer.tobytes()
+
+                video_stream.write(frame_data)  # Write frames to GridFS
+
                 yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
+
     except GeneratorExit:
-        # Cleanup when client disconnects
-        camera.release()
-        out.release()  # Release the video writer
-        print("Client disconnected, camera released.")
+        print("Stream stopped by the client.")
+    except Exception as e:
+        print(f"Error during frame generation: {e}")
+    finally:
+        print(f"Stream complete. Video saved with ObjectId: {file_id}")
 
 @bp.route('/video_feed')
 def video_feed():
@@ -114,54 +141,42 @@ def video_feed():
 #     if os.path.exists(TEMP_VIDEO_PATH):
 #         os.remove(TEMP_VIDEO_PATH)
 #     return jsonify({"success": True, "message": "Camera stopped and video uploaded", "file_id": str(file_id)}), 200
-  
+
 @bp.route('/stop_camera', methods=['POST'])
 def stop_camera():
-    global camera, total_time, eye_contact_time, tracking_started, start_time
+    global camera, camera_active, file_id, total_time, eye_contact_time, tracking_started, start_time
+
     try:
-        print(camera)
-        camera.release()  # Release the camera
+        # Stop the frame generation loop
+        camera_active = False
+
+        # Release the camera resource
+        if camera and camera.isOpened():
+            print("SDAD")
+            camera.release()
+            camera = None
+
+        # Wait for the file to be finalized in GridFS
         total_time = 0
         eye_contact_time = 0
         tracking_started = False
+
         start_time = None
+        response_file_id = file_id
 
-        # Determine content type of the video (now mp4)
-        content_type = "video/mp4"  # Change to MP4 content type
-
-        # Parse request data
-        data = request.get_json()
-        print("data",data)
-        user_id = ObjectId(data["userid"])  # Convert user ID to ObjectId
-        print(user_id)
-
-        speech_analysis = data["dat"]  # Default to an empty string if not provided
-        print("speech",speech_analysis)
-
-        # Upload the video to MongoDB with contentType
-        with open(TEMP_VIDEO_PATH, "rb") as video_file:
-            file_id = fs.put(
-                video_file,
-                filename="session_video.mp4",  # Save the video as .mp4
-                upload_date=datetime.utcnow(),
-                contentType=content_type,
-                metadata={
-                    "userid": user_id,  # Include the user ID as metadata
-                    "SpeechAnalysis": speech_analysis  # Include speech analysis as metadata
-                }
-            )
-        print(1)
-
-        # Remove the temporary file
-        if os.path.exists(TEMP_VIDEO_PATH):
-            os.remove(TEMP_VIDEO_PATH)
-
-        return jsonify({"success": True, "message": "Camera stopped and video uploaded", "file_id": str(file_id)}), 200
+        return jsonify({
+            "success": True,
+            "message": "Camera stopped and video uploaded",
+            "file_id": str(response_file_id)
+        }), 200
 
     except Exception as e:
-        print(f"Error occurred: {str(e)}")
-        return jsonify({"success": False, "message": "An error occurred", "error": str(e)}), 500
-
+        print(f"Error occurred: {e}")
+        return jsonify({
+            "success": False,
+            "message": "An error occurred",
+            "error": str(e)
+        }), 500
 
 @bp.route('/get_user_videos', methods=['POST'])
 def get_user_videos():

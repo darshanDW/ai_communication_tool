@@ -14,13 +14,13 @@ const VideosPage = () => {
     useEffect(() => {
         const fetchVideos = async () => {
             try {
-                const response = await fetch('http://127.0.0.1:5000/face/get_user_videos', {
+                const response = await fetch('https://ai-communication-tool.onrender.com/face/get_user_videos', {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
 
                     },
-                    body: JSON.stringify({ userid }),
+                    body: JSON.stringify({ userid: '675c309c12f7b34784749b6c' }),
                 });
 
                 const data = await response.json();

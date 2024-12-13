@@ -129,14 +129,11 @@ export const Assessment = () => {
         });
     };
 
-    const token = localStorage.getItem("token"); // Replace 'authToken' with the key used in your app
-    const decodedToken = jwtDecode(token); // Decode the token
-    const userid = decodedToken.userid;
-    console.log(userid)
 
 
     // Start recording: Initialize speech recognition and audio recorder
     const startAssessment = async () => {
+
 
         setIsRecording(true);
         resetTranscript();
@@ -176,7 +173,9 @@ export const Assessment = () => {
         recorder.start();
         setAudioRecorder(recorder);
 
-        // Wait for the stop event to be triggered and get the audio file
+        // Wait for the stop event to be
+        // 
+        //  triggered and get the audio file
         const audioBlob = await stopRecording;
         if (audioBlob) {
             setAudioBlob(audioBlob); // Set the audio blob once recording has stopped
@@ -187,105 +186,110 @@ export const Assessment = () => {
     // Extract user_id (adjust based on your token structure)
     // Stop recording: Stop speech recognition and audio recorder
     const stopAssessment = async () => {
-
-
-        var dat = {}
+        const token = localStorage.getItem("token"); // Replace 'authToken' with the key used in your app
+        const decodedToken = jwtDecode(token); // Decode the token
+        const userid = decodedToken.userid;
+        console.log(userid);
 
         setIsRecording(false); // Stop recording
         SpeechRecognition.stopListening();
-        if (audioRecorder) audioRecorder.stop();
+
+        // Stop audio recorder and set the audioBlob
+        if (audioRecorder) {
+            audioRecorder.stop();
+        }
+
         // Stop camera
         try {
             console.log("Transcript being sent:", transcript);
-            const response = await fetch('http://127.0.0.1:5000/grammer/check', {
+            const response = await fetch('https://ai-communication-tool.onrender.com/grammer/check', {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-
                 },
                 body: JSON.stringify({ transcript }),
             });
 
-            dat = await response.json();
+            const dat = await response.json();
             console.log("API Response:", dat);
             setscores(dat); // Update the state
-            console.log(dat)
+
+            // Stop the camera on the server
+            if (dat) {
+                try {
+                    const cameraResponse = await fetch("http://127.0.0.1:5000/face/stop_camera", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({ userid, dat }),
+                    });
+                    if (cameraResponse.ok) {
+                        console.log("Camera stopped successfully.");
+                    } else {
+                        console.error("Failed to stop the camera.");
+                    }
+                } catch (error) {
+                    console.error("Error in stopping the camera:", error);
+                }
+            }
         } catch (err) {
             console.error("Error in grammar check:", err);
         }
 
+        // Wait until the audio blob is set before calling saveAudio
+        if (audioRecorder) {
+            audioRecorder.onstop = async () => {
+                const chunks = [];
+                const audioBlob = new Blob(chunks, { type: "audio/webm" });
+                setAudioBlob(audioBlob); // Set the audio blob
 
-        if (dat) {
-            try {
-                
-                const response = await fetch("http://127.0.0.1:5000/face/stop_camera", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json", // Inform the server of JSON payload
-                    },
-                    body: JSON.stringify({ userid, dat }) // Correctly stringify the JSON object
-                });
-                console.log(response)
-                if (response.ok) {
-                    console.log("Camera stopped successfully.");
+                if (audioBlob) {
+                    await saveAudio(audioBlob); // Pass audioBlob to saveAudio
                 } else {
-                    console.log(response)
-                    console.error("Failed to stop the camera.");
+                    console.error("No audio blob created.");
                 }
-            } catch (error) {
-                console.error("Error in stopping the camera:", error);
-            }
+            };
         }
 
-        // Stop assessment and check grammar
-        setShowFace(false);
-
-
+        setShowFace(false); // Hide the video feed
         console.log("Stopping assessment...");
-
-
     };
 
-
-    // Save the audio file (connect with backend for actual upload)
-    const saveAudio = async () => {
+    const saveAudio = async (audioBlob) => {
         countSpeechRate();
 
         if (audioBlob) {
             const audioURL = URL.createObjectURL(audioBlob);
             console.log("Audio saved. File URL:", audioURL);
 
-
-
-
-            // Implement backend upload logic here
             try {
                 const formData = new FormData();
                 formData.append('audio_data', audioBlob, 'recorded_audio.webm');
                 formData.append('type', 'wav');
 
-                const response = await fetch('http://127.0.0.1:5000/grammer/check_pauses', {
+                const response = await fetch('https://ai-communication-tool.onrender.com/grammer/check_pauses', {
                     method: 'POST',
                     cache: 'no-cache',
                     body: formData,
-
                 });
-                console.log(await response.json())
 
-            } catch (err) { console.log(err) }
-            URL.revokeObjectURL(audioURL);
-
-
+                const result = await response.json(); // Parse the JSON response
+                console.log("Server Response:", result);
+            } catch (err) {
+                console.error("Error in uploading audio:", err);
+            } finally {
+                URL.revokeObjectURL(audioURL); // Clean up the object URL
+            }
+        } else {
+            console.error("No audio blob to save.");
         }
-        else {
-            console.log("audioblob is empty")
-        }
-
-
-
-
-
     };
+
+
+
+
+
     async function countSpeechRate() {
         try {
             const duration = count;
@@ -346,7 +350,19 @@ export const Assessment = () => {
                     <button className="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600" onClick={startAssessment} disabled={isRecording}>
                         Start
                     </button>
-                    <button className="bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600" onClick={() => { stopAssessment(); saveAudio(); }} disabled={!isRecording}>
+                    <button className="bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600" onClick={async () => {
+
+                        await stopAssessment();
+
+                        console.log(1)
+                        saveAudio();
+
+
+
+
+                        console.log(3)
+
+                    }} disabled={!isRecording}>
                         Stop
                     </button>
                     {/* Feedback Button */}
