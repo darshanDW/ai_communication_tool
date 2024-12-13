@@ -13,7 +13,6 @@ from bson import ObjectId
 import threading
 bp = Blueprint('face', __name__)
 
-camera = None
 CORS(bp)
 # MongoDB setup
 client = MongoClient("mongodb+srv://pranavhore1455:Pranav%402003@cluster0.8ucsl.mongodb.net/")  # Update this with your MongoDB URI
@@ -23,6 +22,7 @@ fs = gridfs.GridFS(db)
 
 camera_active = True  # Global flag
 
+camera = None
 
 file_id = None  # Global variable to store the file_id
 # Load pre-trained Haar cascades for face and eye detection
@@ -75,8 +75,8 @@ def process_frame(frame):
 
 def generate_frames():
     global camera, file_id
-    if not camera:
-        camera = cv2.VideoCapture(0)
+
+    camera = cv2.VideoCapture(0)
 
     try:
         with fs.new_file(
